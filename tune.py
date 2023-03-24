@@ -281,7 +281,7 @@ if __name__ == "__main__":
     MAX_EPOCHS = 3
     GPU_PER_TRIAL = 1
     CPU_PER_TRIAL = 8
-    N_SAMPLES = 100  # bump this up
+    N_SAMPLES = 300  # bump this up
     BATCH_SIZE = 128
 
     config = {
@@ -296,7 +296,7 @@ if __name__ == "__main__":
         "lr": tune.loguniform(1e-6, 1e-2),
         "batch_size": tune.choice([16, 32, 64, 128]),  # set to a power of 2; depends on GPU capacity,
         "delta": tune.uniform(0.1, 1),
-        "upsampling_mode": tune.choice(['nearest', 'linear', 'bilinear', 'bicubic', 'trilinear']),
+        "upsampling_mode": tune.choice(['nearest', 'bilinear', 'bicubic']),
         "n_depthwise": tune.randint(1,8),
     }
 
