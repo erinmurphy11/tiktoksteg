@@ -1,0 +1,13 @@
+config/adam_beta                                                      0.970322
+config/batch_size                                                          128
+config/beta                                                                  1
+config/checkpoint_dir        /home/roybatti/Desktop/tiktoks/tiktoksteg/chec...
+config/data_dir                 /home/roybatti/Desktop/tiktoks/tiktoksteg/data
+config/delta                                                          0.100887
+config/first_channels                                                       16
+config/lr                                                             0.000319
+config/max_channels                                                        256
+config/n_convs                                                               4
+config/n_depthwise                                                           7
+config/num_epochs                                                           30
+config/upsampling_mode                                                 nearest

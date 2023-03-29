@@ -122,7 +122,7 @@ class HideNet(nn.Module):
             )
             
         up_layers.append(
-            self.up_block(self.up_in[-1], self.up_out[-1], nn.Conv2d, act=nn.Sigmoid)
+            self.up_block(self.up_in[-1], self.up_out[-1], nn.Conv2d, act=nn.Tanh)
         )
         
         self.down_layers = nn.ModuleList(down_layers)
@@ -154,7 +154,7 @@ class RevealNet(nn.Module):
             conv(in_c, out_c, kernel_size, stride, padding), nn.BatchNorm2d(out_c), nn.LeakyReLU(0.2)
         )
     
-    def __init__(self, nc=3, nhf=64, output_function=nn.Sigmoid):
+    def __init__(self, nc=3, nhf=64, output_function=nn.Tanh):
 
         super(RevealNet, self).__init__()
         self.main = nn.Sequential(
