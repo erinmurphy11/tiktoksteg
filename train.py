@@ -27,7 +27,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 import torchvision
 import torchvision.transforms as transforms
 
-from model import HideNet, RevealNet, weights_init
+from model import HideNet, RevealNet, weights_init   
 
 def load_data(data_dir="./data"):
     """This function is expected to load data from the given directory, and
@@ -74,7 +74,7 @@ def train(config, args):
     Hnet.apply(weights_init)
 
     Rnet = RevealNet(
-        output_function=nn.Sigmoid,
+        output_function=nn.Tanh,
         nhf=config["first_channels"] # USE SAME FOR BOTH TO REDUCE SEARCH SPACE
     )
     Rnet.apply(weights_init)
@@ -89,14 +89,14 @@ def train(config, args):
         Hnet.parameters(), lr=config["lr"], betas=(config["adam_beta"], 0.999)
     )
     schedulerH = ReduceLROnPlateau(
-        optimizerH, mode="min", factor=0.2, patience=5, verbose=True
+        optimizerH, mode="min", factor=0.9, patience=10, verbose=True, min_lr=7e-5
     )
 
     optimizerR = optim.Adam(
         Rnet.parameters(), lr=config["lr"], betas=(config["adam_beta"], 0.999)
     )
     schedulerR = ReduceLROnPlateau(
-        optimizerR, mode="min", factor=0.2, patience=8, verbose=True
+        optimizerR, mode="min", factor=0.9, patience=10, verbose=True, min_lr=7e-5
     )
 
     trainset, _ = load_data(args.data_dir)
@@ -264,6 +264,9 @@ def train(config, args):
                     "r_val_loss": np.sum(val_r_losses) / val_batch_sizes,
                     "sum_val_loss": np.sum(val_sum_losses) / val_batch_sizes,
                     "epoch": epoch,
+                    "h_lr": optimizerH.param_groups[0]['lr'],
+                    "r_lr": optimizerR.param_groups[0]['lr'],
+
                 },
                 step=epoch,
             )
@@ -271,7 +274,7 @@ def train(config, args):
         output_dir = f"epoch_{epoch}"
         if args.output_dir is not None:
             output_dir = os.path.join(args.output_dir, output_dir)
-        accelerator.save_state(output_dir)
+        accelerator.save_state(output_dir) 
 
     accelerator.print("Finished Training")
     if args.with_tracking:
@@ -305,7 +308,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="checkpoints",
+        default="checkpoints beta=0.75",
         help="Optional save directory where all checkpoint folders will be stored. Default is the current working directory.",
     )
     parser.add_argument(
@@ -329,12 +332,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config = {
-            "num_epochs": 1000,
+            "num_epochs": int(1e5),
             "first_channels": 16,  # number of channels in first layer
             "max_channels": 256,  # maximum number of channels in any layer
             "n_convs": 4,
             "adam_beta": 0.97,
-            "beta": 1,  # Default is 0.75
+            "beta": 0.75,  # Default is 0.75
             "lr": 3e-4,
             "batch_size": 128,  # set to a power of 2; depends on GPU capacity
             "upsampling_mode": "nearest",
