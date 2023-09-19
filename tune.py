@@ -10,24 +10,23 @@ https://pytorch.org/tutorials/beginner/hyperparameter_tuning_tutorial.html.
 """
 
 
-from functools import partial
-import os
 import math
+import os
+from functools import partial
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import random_split
-from torchvision.utils import save_image
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.cuda.amp.grad_scaler import GradScaler
-
 import torchvision
 import torchvision.transforms as transforms
-
 from ray import tune
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.suggest.hyperopt import HyperOptSearch
+from torch.cuda.amp.grad_scaler import GradScaler
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.data import random_split
+from torchvision.utils import save_image
 
 from model import HideNet, RevealNet, weights_init
 
@@ -60,13 +59,13 @@ def train(config):
     :param checkpoint_dir: The directory to load checkpoints from.
     :param data_dir: The directory to load data from.
     """
-    
+
     Hnet = HideNet(
         first_c=config["first_channels"],  # USE SAME FOR BOTH TO REDUCE SEARCH SPACE
         max_c=config["max_channels"],
         n_conv=config["n_convs"],
         upsampling_mode=config["upsampling_mode"],
-        n_depthwise=config["n_depthwise"]
+        n_depthwise=config["n_depthwise"],
     )
 
     Hnet.cuda()
@@ -78,7 +77,7 @@ def train(config):
 
     Rnet = RevealNet(
         output_function=nn.Sigmoid,
-        nhf=config["first_channels"] # USE SAME FOR BOTH TO REDUCE SEARCH SPACE
+        nhf=config["first_channels"],  # USE SAME FOR BOTH TO REDUCE SEARCH SPACE
     )
     Rnet.cuda()
     Rnet.apply(weights_init)
@@ -150,12 +149,11 @@ def train(config):
         Rnet.train()
 
         # Train the model
-        for i, (data,_) in enumerate(trainloader, 0):
+        for i, (data, _) in enumerate(trainloader, 0):
             Hnet.zero_grad()
             Rnet.zero_grad()
 
             with torch.autocast("cuda" if "cuda" in device else "cpu"):
-
                 all_pics = data
                 this_batch_size = int(all_pics.size()[0] / 2)
 
@@ -203,14 +201,18 @@ def train(config):
         val_r_losses = []
         val_sum_losses = []
         val_batch_sizes = 0.0
-        for i, (data,_) in enumerate(valloader, 0):
+        for i, (data, _) in enumerate(valloader, 0):
             with torch.no_grad():
                 with torch.autocast("cuda" if "cuda" in device else "cpu"):
                     all_pics = data
                     this_batch_size = int(all_pics.size()[0] / 2)
 
-                    cover_img = all_pics[0:this_batch_size, :, :, :]  # batchsize,3,256,256
-                    secret_img = all_pics[this_batch_size : this_batch_size * 2, :, :, :]
+                    cover_img = all_pics[
+                        0:this_batch_size, :, :, :
+                    ]  # batchsize,3,256,256
+                    secret_img = all_pics[
+                        this_batch_size : this_batch_size * 2, :, :, :
+                    ]
 
                     concat_img = torch.cat([cover_img, secret_img], dim=1)
 
@@ -238,17 +240,35 @@ def train(config):
                     err_sum = errH + betaerrR_secret
                     val_sum_losses.append(err_sum.item())
                     val_batch_sizes += this_batch_size
-        
+
         schedulerH.step(np.sum(val_sum_losses) / val_batch_sizes)
         schedulerR.step(np.sum(val_sum_losses) / val_batch_sizes)
 
         # save images
-        save_image(container_img, os.path.join(config["checkpoint_dir"],"container.png"), normalize=True)
-        save_image(cover_imgv, os.path.join(config["checkpoint_dir"],"cover.png"), normalize=True)
-        save_image(rev_secret_img, os.path.join(config["checkpoint_dir"],"revealed_secret.png"), normalize=True)
-        save_image(secret_imgv, os.path.join(config["checkpoint_dir"],"secret.png"), normalize=True)
+        save_image(
+            container_img,
+            os.path.join(config["checkpoint_dir"], "container.png"),
+            normalize=True,
+        )
+        save_image(
+            cover_imgv,
+            os.path.join(config["checkpoint_dir"], "cover.png"),
+            normalize=True,
+        )
+        save_image(
+            rev_secret_img,
+            os.path.join(config["checkpoint_dir"], "revealed_secret.png"),
+            normalize=True,
+        )
+        save_image(
+            secret_imgv,
+            os.path.join(config["checkpoint_dir"], "secret.png"),
+            normalize=True,
+        )
 
-        with tune.checkpoint_dir(os.path.join(config["checkpoint_dir"], str(epoch))) as cp_dir:
+        with tune.checkpoint_dir(
+            os.path.join(config["checkpoint_dir"], str(epoch))
+        ) as cp_dir:
             path = os.path.join(cp_dir, "checkpoint")
             checkpoint_dict = {
                 "optimizerH": optimizerH.state_dict(),
@@ -269,12 +289,13 @@ def train(config):
                 "r_val_loss": np.sum(val_r_losses) / val_batch_sizes,
                 "sum_val_loss": np.sum(val_sum_losses) / val_batch_sizes,
                 "total_params": Hnet_parameters + Rnet_parameters,
-                "weighted_val_loss": math.log(Hnet_parameters + Rnet_parameters) * (np.sum(val_sum_losses) / val_batch_sizes)
-                
+                "weighted_val_loss": math.log(Hnet_parameters + Rnet_parameters)
+                * (np.sum(val_sum_losses) / val_batch_sizes),
             }
         )
 
     print("Finished Training")
+
 
 if __name__ == "__main__":
     # TODO: Make below command line arguments
@@ -286,25 +307,31 @@ if __name__ == "__main__":
 
     config = {
         "data_dir": os.path.abspath("./data"),
-        "checkpoint_dir":os.path.abspath("./checkpoints"),
+        "checkpoint_dir": os.path.abspath("./checkpoints"),
         "num_epochs": 30,
-        "first_channels": tune.choice([16, 32, 64, 128]),  # number of channels in first layer
-        "max_channels": tune.choice([128, 256, 512, 1024, 2048, 4096]),  # maximum number of channels in any layer
-        "n_convs": tune.randint(1,8),
+        "first_channels": tune.choice(
+            [16, 32, 64, 128]
+        ),  # number of channels in first layer
+        "max_channels": tune.choice(
+            [128, 256, 512, 1024, 2048, 4096]
+        ),  # maximum number of channels in any layer
+        "n_convs": tune.randint(1, 8),
         "adam_beta": tune.loguniform(0.93, 0.999),
         "beta": 1,  # Default is 0.75
         "lr": tune.loguniform(1e-6, 1e-2),
-        "batch_size": tune.choice([16, 32, 64, 128]),  # set to a power of 2; depends on GPU capacity,
+        "batch_size": tune.choice(
+            [16, 32, 64, 128]
+        ),  # set to a power of 2; depends on GPU capacity,
         "delta": tune.uniform(0.1, 1),
-        "upsampling_mode": tune.choice(['nearest', 'bilinear', 'bicubic']),
-        "n_depthwise": tune.randint(1,8),
+        "upsampling_mode": tune.choice(["nearest", "bilinear", "bicubic"]),
+        "n_depthwise": tune.randint(1, 8),
     }
 
     # TODO: Put any initial guesses as to good hyperparameter configurations here
     initial_params = [
         {
             "data_dir": os.path.abspath("./data"),
-            "checkpoint_dir":os.path.abspath("./checkpoints"),
+            "checkpoint_dir": os.path.abspath("./checkpoints"),
             "num_epochs": 30,
             "first_channels": 64,  # number of channels in first layer
             "max_channels": 512,  # maximum number of channels in any layer
@@ -323,7 +350,7 @@ if __name__ == "__main__":
 
     # save parameters to a file
     algo = HyperOptSearch(points_to_evaluate=initial_params)
-    #if os.path.exists("search_checkpoint.pkl"):
+    # if os.path.exists("search_checkpoint.pkl"):
     #    algo.restore("search_checkpoint.pkl")
 
     tuner = tune.Tuner(

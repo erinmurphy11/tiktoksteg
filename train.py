@@ -9,25 +9,24 @@ heavily borrows from the Ray Tune tutorial available at
 https://pytorch.org/tutorials/beginner/hyperparameter_tuning_tutorial.html.
 https://github.com/huggingface/accelerate/blob/main/examples/complete_cv_example.py 
 """
-from accelerate import Accelerator
-
-import os
-import math
-import numpy as np
 import argparse
+import math
+import os
 
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
-from torch.utils.data import random_split
-from torchvision.utils import make_grid
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-
+import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
+from accelerate import Accelerator
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.data import random_split
+from torchvision.utils import make_grid
 
-from model import HideNet, RevealNet, weights_init   
+from model import HideNet, RevealNet, weights_init
+
 
 def load_data(data_dir="./data"):
     """This function is expected to load data from the given directory, and
@@ -57,10 +56,10 @@ def train(config, args):
     :param args: Command-line parsed arguments.
     """
     accelerator = Accelerator(
-        cpu=args.cpu, 
-        mixed_precision=args.mixed_precision, 
-        log_with="tensorboard", 
-        logging_dir=args.logging_dir
+        cpu=args.cpu,
+        mixed_precision=args.mixed_precision,
+        log_with="tensorboard",
+        logging_dir=args.logging_dir,
     )
 
     Hnet = HideNet(
@@ -68,14 +67,14 @@ def train(config, args):
         max_c=config["max_channels"],
         n_conv=config["n_convs"],
         upsampling_mode=config["upsampling_mode"],
-        n_depthwise=config["n_depthwise"]
+        n_depthwise=config["n_depthwise"],
     )
 
     Hnet.apply(weights_init)
 
     Rnet = RevealNet(
         output_function=nn.Tanh,
-        nhf=config["first_channels"] # USE SAME FOR BOTH TO REDUCE SEARCH SPACE
+        nhf=config["first_channels"],  # USE SAME FOR BOTH TO REDUCE SEARCH SPACE
     )
     Rnet.apply(weights_init)
 
@@ -113,8 +112,24 @@ def train(config, args):
         val_subset, batch_size=int(config["batch_size"]), shuffle=True, num_workers=8
     )
 
-    Hnet, Rnet, optimizerH, optimizerR, schedulerH, schedulerR, trainloader, valloader = accelerator.prepare(
-        Hnet, Rnet, optimizerH, optimizerR, schedulerH, schedulerR, trainloader, valloader
+    (
+        Hnet,
+        Rnet,
+        optimizerH,
+        optimizerR,
+        schedulerH,
+        schedulerR,
+        trainloader,
+        valloader,
+    ) = accelerator.prepare(
+        Hnet,
+        Rnet,
+        optimizerH,
+        optimizerR,
+        schedulerH,
+        schedulerR,
+        trainloader,
+        valloader,
     )
 
     # We need to initialize the trackers we use, and also store our configuration
@@ -122,7 +137,7 @@ def train(config, args):
         run = os.path.split(__file__)[-1].split(".")[0]
         accelerator.init_trackers(run, config)
 
-    start_epoch = 0 
+    start_epoch = 0
 
     if args.resume_from_checkpoint:
         if args.resume_from_checkpoint is not None or args.resume_from_checkpoint != "":
@@ -133,15 +148,18 @@ def train(config, args):
             # Get the most recent checkpoint
             dirs = [f.name for f in os.scandir(os.getcwd()) if f.is_dir()]
             dirs.sort(key=os.path.getctime)
-            path = dirs[-1]  # Sorts folders by date modified, most recent checkpoint is the last
+            path = dirs[
+                -1
+            ]  # Sorts folders by date modified, most recent checkpoint is the last
         # Extract `epoch_{i}` or `step_{i}`
         training_difference = os.path.splitext(path)[0]
 
         start_epoch = int(training_difference.replace("epoch_", "")) + 1
         resume_step = None
 
-
-    for epoch in range(start_epoch, config["num_epochs"]):  # loop over the dataset multiple times
+    for epoch in range(
+        start_epoch, config["num_epochs"]
+    ):  # loop over the dataset multiple times
         train_h_losses = []
         train_r_losses = []
         train_sum_losses = []
@@ -150,7 +168,7 @@ def train(config, args):
         Rnet.train()
 
         # Train the model
-        for i, (data,_) in enumerate(trainloader, 0):
+        for i, (data, _) in enumerate(trainloader, 0):
             Hnet.zero_grad()
             Rnet.zero_grad()
 
@@ -197,7 +215,7 @@ def train(config, args):
         val_r_losses = []
         val_sum_losses = []
         val_batch_sizes = 0.0
-        for i, (data,_) in enumerate(valloader, 0):
+        for i, (data, _) in enumerate(valloader, 0):
             with torch.no_grad():
                 all_pics = data
                 this_batch_size = int(all_pics.size()[0] / 2)
@@ -226,33 +244,25 @@ def train(config, args):
                 err_sum = errH + betaerrR_secret
                 val_sum_losses.append(err_sum.item())
                 val_batch_sizes += this_batch_size
-        
+
         schedulerH.step(np.sum(val_sum_losses) / val_batch_sizes)
         schedulerR.step(np.sum(val_sum_losses) / val_batch_sizes)
 
         # save imagesdata_dir
         # THIS IS GONNA GIVE ERRORS
         accelerator.get_tracker("tensorboard").tracker.add_image(
-            "container", 
-            make_grid(container_img, normalize=True),
-            epoch
+            "container", make_grid(container_img, normalize=True), epoch
         )
         accelerator.get_tracker("tensorboard").tracker.add_image(
-            "cover", 
-            make_grid(cover_img, normalize=True),
-            epoch
+            "cover", make_grid(cover_img, normalize=True), epoch
         )
         accelerator.get_tracker("tensorboard").tracker.add_image(
-            "revealed_secret", 
-            make_grid(rev_secret_img, normalize=True),
-            epoch
+            "revealed_secret", make_grid(rev_secret_img, normalize=True), epoch
         )
         accelerator.get_tracker("tensorboard").tracker.add_image(
-            "secret", 
-            make_grid(secret_imgv, normalize=True),
-            epoch
+            "secret", make_grid(secret_imgv, normalize=True), epoch
         )
-        
+
         accelerator.print(f"epoch {epoch}")
         if args.with_tracking:
             accelerator.log(
@@ -264,9 +274,8 @@ def train(config, args):
                     "r_val_loss": np.sum(val_r_losses) / val_batch_sizes,
                     "sum_val_loss": np.sum(val_sum_losses) / val_batch_sizes,
                     "epoch": epoch,
-                    "h_lr": optimizerH.param_groups[0]['lr'],
-                    "r_lr": optimizerR.param_groups[0]['lr'],
-
+                    "h_lr": optimizerH.param_groups[0]["lr"],
+                    "r_lr": optimizerR.param_groups[0]["lr"],
                 },
                 step=epoch,
             )
@@ -274,21 +283,24 @@ def train(config, args):
         output_dir = f"epoch_{epoch}"
         if args.output_dir is not None:
             output_dir = os.path.join(args.output_dir, output_dir)
-        accelerator.save_state(output_dir) 
+        accelerator.save_state(output_dir)
 
     accelerator.print("Finished Training")
     if args.with_tracking:
         accelerator.end_training()
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Training arguments.")
     parser.add_argument(
-        "--data_dir", 
-        type= str, 
-        default=os.path.abspath("./data"), 
-        help="The data folder on disk."
+        "--data_dir",
+        type=str,
+        default=os.path.abspath("./data"),
+        help="The data folder on disk.",
     )
-    parser.add_argument("--fp16", action="store_true", help="If passed, will use FP16 training.")
+    parser.add_argument(
+        "--fp16", action="store_true", help="If passed, will use FP16 training."
+    )
     parser.add_argument(
         "--mixed_precision",
         type=str,
@@ -298,7 +310,9 @@ if __name__ == "__main__":
         "between fp16 and bf16 (bfloat16). Bf16 requires PyTorch >= 1.10."
         "and an Nvidia Ampere GPU.",
     )
-    parser.add_argument("--cpu", action="store_true", help="If passed, will train on the CPU.")
+    parser.add_argument(
+        "--cpu", action="store_true", help="If passed, will train on the CPU."
+    )
     parser.add_argument(
         "--checkpointing_steps",
         type=str,
@@ -332,15 +346,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config = {
-            "num_epochs": int(1e5),
-            "first_channels": 16,  # number of channels in first layer
-            "max_channels": 256,  # maximum number of channels in any layer
-            "n_convs": 4,
-            "adam_beta": 0.97,
-            "beta": 0.75,  # Default is 0.75
-            "lr": 3e-4,
-            "batch_size": 128,  # set to a power of 2; depends on GPU capacity
-            "upsampling_mode": "nearest",
-            "n_depthwise": 4,
-        }
+        "num_epochs": int(1e5),
+        "first_channels": 16,  # number of channels in first layer
+        "max_channels": 256,  # maximum number of channels in any layer
+        "n_convs": 4,
+        "adam_beta": 0.97,
+        "beta": 0.75,  # Default is 0.75
+        "lr": 3e-4,
+        "batch_size": 128,  # set to a power of 2; depends on GPU capacity
+        "upsampling_mode": "nearest",
+        "n_depthwise": 4,
+    }
     train(config, args)
